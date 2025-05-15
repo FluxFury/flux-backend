@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from flux_backend.api.routers import all_routers
 from flux_backend.custom_logger import logger
-from flux_backend.utils.utils import model_to_dict, utcnow_naive
+from flux_orm.models.utils import model_to_dict, utcnow_naive
 
 NEWS_TOPIC     = "CS2_raw_news"
 MATCH_TOPIC    = "CS2_match"
