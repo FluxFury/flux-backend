@@ -1,0 +1,28 @@
+from redis import Redis
+
+redis_client = Redis(host="redis", port=6379, db=0)
+
+LOCK_KEY_CR_MATCHES = "create_matches_lock"
+LOCK_TIMEOUT_CR_MATCHES = 1200
+
+LOCK_KEY_UPDATE_MATCHES = "update_matches_lock"
+LOCK_TIMEOUT_UPDATE_MATCHES = 1200
+
+LOCK_KEY_NEWS_SPIDER = "news_spider_lock"
+LOCK_TIMEOUT_NEWS_SPIDER = 12000
+
+LOCK_KEY_PAST_MATCHES_SPIDER = "past_matches_spider_lock"
+LOCK_TIMEOUT_PAST_MATCHES_SPIDER = 1200
+
+LOCK_KEY_PLAYERS_SPIDER = "players_spider_lock"
+LOCK_TIMEOUT_PLAYERS_SPIDER = 1200
+
+LOCK_KEY_TEAMS_SPIDER = "teams_spider_lock"
+LOCK_TIMEOUT_TEAMS_SPIDER = 1200
+
+LOCK_KEY_TOURNAMENTS_SPIDER = "tournaments_spider_lock"
+LOCK_TIMEOUT_TOURNAMENTS_SPIDER = 1200
+
+
+
+

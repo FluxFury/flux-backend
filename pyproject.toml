@@ -1,22 +1,27 @@
-[tool.poetry]
-name = "flux-backend"
+[project]
+name = "flux_backend"
 version = "0.1.0"
 description = ""
-authors = ["Jumbik_Tank <oprivetdaent@gmail.com>"]
+authors = [{ name = "Jumbik_Tank", email = "oprivetdaent@gmail.com" }]
+requires-python = "~=3.12"
 readme = "README.md"
-package-mode = false
+dependencies = [
+    "fastapi>=0.114.0",
+    "pydantic>=1.8.2",
+    "SQLAlchemy>=2.0.34",
+    "uvicorn>=0.15.0",
+    "python-dotenv==1.0.1",
+    "uuid6>=2024.7.10,<2025",
+    "pandas>=2.2.2,<3",
+    "flux-orm",
+    "webnews-parser @ git+ssh://git@github.com/FluxFury/webnews-parser.git",
+    "redis>=5.2.1,<6",
+    "celery>=5.5.1,<6",
+    "aiokafka>=0.12.0",
+    "loguru>=0.7.3",
+]
 
-[tool.poetry.dependencies]
-python = "^3.13"
-fastapi = ">=0.114.0"
-pydantic = ">=1.8.2"
-SQLAlchemy = ">=2.0.34"
-uvicorn = ">=0.15.0"
-python-dotenv = "1.0.1"
-uuid6 = "^2024.7.10"
-pandas = "^2.2.2"
-flux-orm = {git = "ssh://git@github.com/FluxFury/flux-orm.git", rev = "main"}
+[tool.uv]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv.sources]
+flux-orm = { git = "ssh://git@github.com/FluxFury/flux-orm.git", rev = "main" }

@@ -1,0 +1,140 @@
+services:
+
+  flux-backend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+      ssh:
+        - default
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    networks:
+      - app_network
+      - flux-backend_app_network
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka_broker:
+        condition: service_healthy
+    volumes:
+      - ./flux_backend:/app/flux_backend
+
+
+  db:
+    image: postgres:17
+    container_name: ff-db
+    env_file:
+      - .env
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+    command: >
+      postgres
+      -c max_connections=300
+      -c shared_buffers=256MB
+      -c work_mem=4MB
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app_network
+      - flux-backend_app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -p ${POSTGRES_PORT}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - app_network
+      - flux-backend_app_network
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: ./flux_backend/task_manager/Dockerfile
+      ssh:
+        - default
+    command: >
+      uv run celery -A flux_backend.task_manager.celery_app.celery_app worker
+      --loglevel=INFO --autoscale=12,5
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - app_network
+      - flux-backend_app_network
+  celery_beat:
+    build:
+      context: .
+      dockerfile: ./flux_backend/task_manager/Dockerfile
+      ssh:
+        - default
+    command: >
+      uv run celery -A flux_backend.task_manager.celery_app.celery_app beat
+      --loglevel=INFO --schedule=/tmp/celerybeat-schedule
+    depends_on:
+      - redis
+    networks:
+      - app_network
+      - flux-backend_app_network
+  kafka_broker:
+    image: apache/kafka:latest
+    container_name: broker
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: CONTROLLER://localhost:9091,HOST://0.0.0.0:9092,DOCKER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka_broker:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,DOCKER:PLAINTEXT,HOST:PLAINTEXT
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9091
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          /opt/kafka/bin/kafka-broker-api-versions.sh \
+            --bootstrap-server kafka_broker:9093 \
+            >/dev/null 2>&1 || exit 1
+      start_period: 10s
+      interval: 30s
+      timeout: 30s
+      retries: 4
+    networks:
+      - app_network
+      - flux-backend_app_network
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  app_network:
+    driver: bridge
+  flux-backend_app_network:  # Define the external network
+    external: true
