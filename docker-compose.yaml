@@ -1,6 +1,7 @@
 services:
 
   flux-backend:
+    container_name: flux-backend
     build:
       context: .
       dockerfile: ./Dockerfile
