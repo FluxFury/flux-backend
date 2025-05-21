@@ -1,22 +1,27 @@
-from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
-from datetime import datetime
-
+from typing import Annotated
+from math import ceil
+from sqlalchemy import func
 from flux_orm.database import new_session
 from flux_orm.models.models import (
     Match,
     MatchStatus,
     Team,
-    TeamMember,
     Sport,
+    FormattedNews,
+    FilteredMatchInNews,
+    Competition,
 )
 
+from flux_backend.utils.utils import common_pagination_params, has_any, order_clause
+
 from schemas.cs.schemas import (
-    MatchOut,
-    SportOut
+    Page,
+    PageMeta,
+    MatchEventOut,
 )
 
 router = APIRouter(
@@ -28,15 +33,21 @@ router = APIRouter(
 async def get_match_details(match_id: UUID):
     async with new_session() as session:
         stmt = (
-            select(Match, MatchStatus.name.label("status_name"))
-            .outerjoin(MatchStatus, Match.status_id == MatchStatus.status_id)
+            select(
+                Match,
+                MatchStatus.name.label("status_name"),
+                Competition.name.label("competition_name"),
+                Competition.image_url.label("competition_logo_url")
+            )
+            .outerjoin(MatchStatus,    Match.status_id       == MatchStatus.status_id)
+            .outerjoin(Competition,    Match.competition_id == Competition.competition_id)
             .where(Match.match_id == match_id)
         )
         result = await session.execute(stmt)
         row = result.one_or_none()
         if not row:
             raise HTTPException(status_code=404, detail="Match not found")
-        match_obj, status_name = row
+        match_obj, status_name, competition_name, competition_logo_url = row
         return {
             "match_id": str(match_obj.match_id),
             "match_name": match_obj.match_name,
@@ -44,6 +55,8 @@ async def get_match_details(match_id: UUID):
             "planned_start_datetime": match_obj.planned_start_datetime,
             "end_datetime": match_obj.end_datetime,
             "status_name": status_name,
+            "competition_name": competition_name,
+            "competition_logo_url": competition_logo_url,
             "created_at": match_obj.created_at,
             "updated_at": match_obj.updated_at
         }
@@ -65,7 +78,7 @@ async def get_match_teams_and_rosters(match_id: UUID):
 
             teams_data.append({
                 "team_id": str(t.team_id),
-                "team_name": t.name,
+                "team_name": t.pretty_name if t.pretty_name else t.name,
                 "main_roster": [
                     {
                         "player_id": str(m.player_id),
@@ -80,54 +93,126 @@ async def get_match_teams_and_rosters(match_id: UUID):
             })
         return teams_data
 
-@router.get("/matches/{match_id}/events")
-async def get_match_events(
+
+# ---------- endpoint ---------------------------------------------------------
+@router.get(
+    "/matches/{match_id}/events",
+    response_model=Page[MatchEventOut],
+)
+async def list_match_events(
     match_id: UUID,
-    sort_by: str = Query("date", pattern="^(date|person|other)$"),
-    date_filter: Optional[datetime] = None,
-    person_name: Optional[str] = None
+    pagination: Annotated[dict, Depends(common_pagination_params)],
+    people:     list[str] | None = Query(None),
+    orgs:       list[str] | None = Query(None),
+    locations:  list[str] | None = Query(None),
+    events_kw:  list[str] | None = Query(None, alias="events"),
+    others:     list[str] | None = Query(None, alias="other"),
+    order: str = Query("-timestamp", description="timestamp | -timestamp | title | ..."),
 ):
     async with new_session() as session:
-        match_obj = await session.get(Match, match_id)
-        if not match_obj:
-            raise HTTPException(status_code=404, detail="Match not found")
+        # проверяем, что матч существует (быстрая ошибка 404)
+        if not await session.get(Match, match_id):
+            raise HTTPException(404, "Match not found")
 
-        # The actual query depends on how you store events.
-        # For example, if you have a MatchEvent model:
-        # stmt = select(MatchEvent).where(MatchEvent.match_id == match_id)
-        # if date_filter is not None: stmt = stmt.where(MatchEvent.timestamp >= date_filter)
-        # if person_name is not None: stmt = stmt.where(MatchEvent.person == person_name)
-        # if sort_by == "date": stmt = stmt.order_by(MatchEvent.timestamp.desc())
-        # if sort_by == "person": stmt = stmt.order_by(MatchEvent.person.asc())
-        # ...
-        # result = await session.execute(stmt)
-        # events = result.scalars().all()
+        #---------------- базовый select ----------------
+        stmt = (
+            select(FormattedNews, FilteredMatchInNews.respective_relevance)
+            .join(
+                FilteredMatchInNews,
+                FilteredMatchInNews.news_id == FormattedNews.formatted_news_id,
+            )
+            .where(FilteredMatchInNews.match_id == match_id)
+        )
+        if people:    stmt = stmt.where(has_any(FormattedNews.keywords["People"], people))
+        if orgs:      stmt = stmt.where(has_any(FormattedNews.keywords["Organizations"], orgs))
+        if locations: stmt = stmt.where(has_any(FormattedNews.keywords["Locations"], locations))
+        if events_kw: stmt = stmt.where(has_any(FormattedNews.keywords["Events"], events_kw))
+        if others:    stmt = stmt.where(has_any(FormattedNews.keywords["Other"], others))
 
-        # Below is only a placeholder response, since the actual logic depends on your model.
-        sample_events = [
-            {
-                "title": "Ronaldo broke his leg",
-                "description": "\"My leg is broken\" - Ronaldo said",
-                "timestamp": "2020-08-22 18:18:00",
-                "person": "Ronaldo"
-            },
-            {
-                "title": "Messi's fan made Haaland cry",
-                "description": "Some description...",
-                "timestamp": "2020-08-20 18:18:00",
-                "person": "Messi's fan"
-            }
+        # --- фасеты
+        async def facet(cat: str):
+            elem = func.jsonb_array_elements_text(
+                    FormattedNews.keywords[cat]).label("kw")
+            q = (select(elem, func.count())
+                .join(FilteredMatchInNews,
+                    FilteredMatchInNews.news_id == FormattedNews.formatted_news_id)
+                .where(FilteredMatchInNews.match_id == match_id)
+                .group_by(elem))
+            return [{"keyword": k, "count": c} for k, c in await session.execute(q)]
+
+
+
+
+        stmt = stmt.order_by(order_clause(FormattedNews, order))
+
+        #---------------- пагинация ---------------------
+        page      = pagination["page"]
+        page_size = pagination["page_size"]
+        offset    = (page - 1) * page_size
+
+        total_items = await session.scalar(
+            select(func.count()).select_from(stmt.subquery())
+        )
+        if total_items is None:
+            total_items = 0
+
+        rows = (
+            await session.execute(
+                stmt.limit(page_size).offset(offset)
+            )
+        ).all()
+
+        data = []
+        #---------------- сборка dto --------------------
+        for news, relevance in rows:
+            # Создаём DTO, подставляя relevance вручную:
+            item = MatchEventOut.model_validate(
+                {
+                    **news.__dict__,
+                    "respective_relevance": relevance,
+                },
+                from_attributes=True
+            )
+            data.append(item)
+        #---------------- фасеты для сайдбара -----------
+        # даты
+        dates_q = (
+            select(
+                func.date_trunc("day", FormattedNews.news_creation_time).label("d"),
+                func.count(),
+            )
+            .join(
+                FilteredMatchInNews,
+                FilteredMatchInNews.news_id == FormattedNews.formatted_news_id,
+            )
+            .where(FilteredMatchInNews.match_id == match_id)
+            .group_by("d")
+            .order_by("d")
+        )
+
+        dates_facet   = [
+            {"date": d.date(), "count": c} for d, c in await session.execute(dates_q)
         ]
-        if person_name:
-            sample_events = [e for e in sample_events if e["person"] == person_name]
-        # This does not handle date filtering or a real model. Example only.
 
-        if sort_by == "date":
-            sample_events.sort(key=lambda x: x["timestamp"], reverse=True)
-        elif sort_by == "person":
-            sample_events.sort(key=lambda x: x["person"])
+        facets = {
+            "available_dates": dates_facet,
+            "people":    await facet("People"),
+            "orgs":      await facet("Organizations"),
+            "locations": await facet("Locations"),
+            "events":    await facet("Events"),
+            "other":     await facet("Other"),
+        }
 
-        return sample_events
+        return Page[MatchEventOut](
+            data=data,
+            meta=PageMeta(
+                page=page,
+                page_size=page_size,
+                total_items=total_items,
+                total_pages=ceil(total_items / page_size) if total_items else 1,
+            ),
+            facets=facets,
+        )
 
 @router.get("/sports/{sport_id}")
 async def get_sport_details(sport_id: UUID):

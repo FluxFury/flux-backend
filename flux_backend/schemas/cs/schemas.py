@@ -1,17 +1,17 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
-
+from typing import Generic, TypeVar, Any
+from pydantic.generics import GenericModel
 
 class CompetitionBase(BaseModel):
     """Base schema for competition data."""
     name: str
-    prize_pool: Optional[str] = None
-    location: Optional[str] = None
-    start_date: Optional[datetime] = None
-    description: Optional[str] = None
-    image_url: Optional[str] = None
+    prize_pool: str | None = None
+    location: str | None = None
+    start_date: datetime | None = None
+    description: str | None = None
+    image_url: str | None = None
 
 
 class CompetitionOut(CompetitionBase):
@@ -27,7 +27,7 @@ class CompetitionOut(CompetitionBase):
 class MatchStatusBase(BaseModel):
     """Base schema for match status data."""
     name: str
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 
 class MatchStatusOut(MatchStatusBase):
@@ -43,19 +43,21 @@ class MatchStatusOut(MatchStatusBase):
 class MatchBase(BaseModel):
     """Base schema for match data."""
     match_name: str
-    pretty_match_name: Optional[str] = None
-    match_url: Optional[str] = None
-    tournament_url: Optional[str] = None
+    pretty_match_name: str | None = None
+    match_url: str | None = None
+    tournament_url: str | None = None
     external_id: str
-    planned_start_datetime: Optional[datetime] = None
-    end_datetime: Optional[datetime] = None
+    planned_start_datetime: datetime | None = None
+    end_datetime: datetime | None = None
 
 
 class MatchOut(MatchBase):
     """Schema for returning match data through external endpoints."""
     match_id: UUID
-    status_id: Optional[UUID] = None
-    status_name: Optional[str] = None
+    status_id: UUID | None = None
+    status_name: str | None = None
+    competition_name: str | None = None
+    news_count: int | None = 0
     created_at: datetime
     updated_at: datetime
 
@@ -67,10 +69,39 @@ class SportOut(BaseModel):
     """Schema for returning sport data through external endpoints."""
     sport_id: UUID
     name: str
-    description: Optional[str] = None
-    image_url: Optional[str] = None
+    description: str | None = None
+    image_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+        
+
+
+
+T = TypeVar("T")
+
+class PageMeta(BaseModel):
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+
+class Page(GenericModel, Generic[T]):
+    data: list[T]
+    meta: PageMeta
+    facets: dict[str, Any] | None = None
+    
+    
+class MatchEventOut(BaseModel):
+    event_id:   UUID            = Field(alias="formatted_news_id")
+    title:      str | None      = Field(alias="header")
+    description:str             = Field(alias="text")
+    timestamp:  datetime | None = Field(alias="news_creation_time")
+    respective_relevance: int | None = Field(alias="respective_relevance")
+    keywords:   dict[str, list[str]]
+
+    class Config:
+        from_attributes   = True           # ← главный флаг
+        populate_by_name  = True           # чтобы в JSON были ваши «event_id», а не alias-имена

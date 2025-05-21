@@ -15,7 +15,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     "update_matches": {
         "task": "flux_backend.task_manager.tasks.u_matches_chain",
-        "schedule": timedelta(minutes=1),
+        "schedule": timedelta(minutes=2),
         "args": ()
     },
     "create_news": {
