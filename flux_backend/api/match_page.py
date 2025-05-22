@@ -64,7 +64,7 @@ async def get_match_details(match_id: UUID):
 @router.get("/matches/{match_id}/teams")
 async def get_match_teams_and_rosters(match_id: UUID):
     async with new_session() as session:
-        stmt = select(Match).options(joinedload(Match.match_teams).options(joinedload(Team.members))).filter_by(match_id=match_id)
+        stmt = select(Match).options(joinedload(Match.match_teams).options(joinedload(Team.members)), joinedload(Match.match_status)).filter_by(match_id=match_id)
         result = await session.execute(stmt)
         match_obj = result.unique().scalar_one_or_none()
         if not match_obj:
@@ -73,8 +73,10 @@ async def get_match_teams_and_rosters(match_id: UUID):
             return []
 
         teams_data = []
+        
         for t in match_obj.match_teams:
             members = t.members
+        
 
             teams_data.append({
                 "team_id": str(t.team_id),
@@ -91,6 +93,8 @@ async def get_match_teams_and_rosters(match_id: UUID):
                     for m in members
                 ]
             })
+        match_score = match_obj.match_status.status
+        teams_data[0]["score"], teams_data[1]["score"] = match_score["team1_score"], match_score["team2_score"]
         return teams_data
 
 
