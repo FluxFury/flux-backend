@@ -59,5 +59,4 @@ class PostgreSQLConnectionSettings(pydantic_settings.BaseSettings):
         )
 
 
-
 postgresql_connection_settings = PostgreSQLConnectionSettings()

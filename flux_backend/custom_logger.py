@@ -6,6 +6,7 @@ from loguru import logger
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 
+
 class InterceptHandler(logging.Handler):
     def emit(self, record):
         # Get corresponding Loguru level
@@ -23,6 +24,7 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(
             level, record.getMessage()
         )
+
 
 # Intercept standard logging
 logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO)

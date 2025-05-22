@@ -24,10 +24,8 @@ from schemas.cs.schemas import (
     MatchEventOut,
 )
 
-router = APIRouter(
-    prefix="/match_page",
-    tags=["match_page"]
-)
+router = APIRouter(prefix="/match_page", tags=["match_page"])
+
 
 @router.get("/matches/{match_id}")
 async def get_match_details(match_id: UUID):
@@ -37,10 +35,10 @@ async def get_match_details(match_id: UUID):
                 Match,
                 MatchStatus.name.label("status_name"),
                 Competition.name.label("competition_name"),
-                Competition.image_url.label("competition_logo_url")
+                Competition.image_url.label("competition_logo_url"),
             )
-            .outerjoin(MatchStatus,    Match.status_id       == MatchStatus.status_id)
-            .outerjoin(Competition,    Match.competition_id == Competition.competition_id)
+            .outerjoin(MatchStatus, Match.status_id == MatchStatus.status_id)
+            .outerjoin(Competition, Match.competition_id == Competition.competition_id)
             .where(Match.match_id == match_id)
         )
         result = await session.execute(stmt)
@@ -58,13 +56,21 @@ async def get_match_details(match_id: UUID):
             "competition_name": competition_name,
             "competition_logo_url": competition_logo_url,
             "created_at": match_obj.created_at,
-            "updated_at": match_obj.updated_at
+            "updated_at": match_obj.updated_at,
         }
+
 
 @router.get("/matches/{match_id}/teams")
 async def get_match_teams_and_rosters(match_id: UUID):
     async with new_session() as session:
-        stmt = select(Match).options(joinedload(Match.match_teams).options(joinedload(Team.members)), joinedload(Match.match_status)).filter_by(match_id=match_id)
+        stmt = (
+            select(Match)
+            .options(
+                joinedload(Match.match_teams).options(joinedload(Team.members)),
+                joinedload(Match.match_status),
+            )
+            .filter_by(match_id=match_id)
+        )
         result = await session.execute(stmt)
         match_obj = result.unique().scalar_one_or_none()
         if not match_obj:
@@ -73,10 +79,9 @@ async def get_match_teams_and_rosters(match_id: UUID):
             return []
 
         teams_data = []
-        
+
         for t in match_obj.match_teams:
             members = t.members
-        
 
             teams_data.append({
                 "team_id": str(t.team_id),
@@ -88,13 +93,16 @@ async def get_match_teams_and_rosters(match_id: UUID):
                         "nickname": m.nickname,
                         "age": m.age,
                         "country": m.country,
-                        "status": m.stats.get("status")
+                        "status": m.stats.get("status"),
                     }
                     for m in members
-                ]
+                ],
             })
         match_score = match_obj.match_status.status
-        teams_data[0]["score"], teams_data[1]["score"] = match_score["team1_score"], match_score["team2_score"]
+        teams_data[0]["score"], teams_data[1]["score"] = (
+            match_score["team1_score"],
+            match_score["team2_score"],
+        )
         return teams_data
 
 
@@ -106,19 +114,21 @@ async def get_match_teams_and_rosters(match_id: UUID):
 async def list_match_events(
     match_id: UUID,
     pagination: Annotated[dict, Depends(common_pagination_params)],
-    people:     list[str] | None = Query(None),
-    orgs:       list[str] | None = Query(None),
-    locations:  list[str] | None = Query(None),
-    events_kw:  list[str] | None = Query(None, alias="events"),
-    others:     list[str] | None = Query(None, alias="other"),
-    order: str = Query("-timestamp", description="timestamp | -timestamp | title | ..."),
+    people: list[str] | None = Query(None),
+    orgs: list[str] | None = Query(None),
+    locations: list[str] | None = Query(None),
+    events_kw: list[str] | None = Query(None, alias="events"),
+    others: list[str] | None = Query(None, alias="other"),
+    order: str = Query(
+        "-timestamp", description="timestamp | -timestamp | title | ..."
+    ),
 ):
     async with new_session() as session:
         # проверяем, что матч существует (быстрая ошибка 404)
         if not await session.get(Match, match_id):
             raise HTTPException(404, "Match not found")
 
-        #---------------- базовый select ----------------
+        # ---------------- базовый select ----------------
         stmt = (
             select(FormattedNews, FilteredMatchInNews.respective_relevance)
             .join(
@@ -127,32 +137,39 @@ async def list_match_events(
             )
             .where(FilteredMatchInNews.match_id == match_id)
         )
-        if people:    stmt = stmt.where(has_any(FormattedNews.keywords["People"], people))
-        if orgs:      stmt = stmt.where(has_any(FormattedNews.keywords["Organizations"], orgs))
-        if locations: stmt = stmt.where(has_any(FormattedNews.keywords["Locations"], locations))
-        if events_kw: stmt = stmt.where(has_any(FormattedNews.keywords["Events"], events_kw))
-        if others:    stmt = stmt.where(has_any(FormattedNews.keywords["Other"], others))
+        if people:
+            stmt = stmt.where(has_any(FormattedNews.keywords["People"], people))
+        if orgs:
+            stmt = stmt.where(has_any(FormattedNews.keywords["Organizations"], orgs))
+        if locations:
+            stmt = stmt.where(has_any(FormattedNews.keywords["Locations"], locations))
+        if events_kw:
+            stmt = stmt.where(has_any(FormattedNews.keywords["Events"], events_kw))
+        if others:
+            stmt = stmt.where(has_any(FormattedNews.keywords["Other"], others))
 
         # --- фасеты
         async def facet(cat: str):
-            elem = func.jsonb_array_elements_text(
-                    FormattedNews.keywords[cat]).label("kw")
-            q = (select(elem, func.count())
-                .join(FilteredMatchInNews,
-                    FilteredMatchInNews.news_id == FormattedNews.formatted_news_id)
+            elem = func.jsonb_array_elements_text(FormattedNews.keywords[cat]).label(
+                "kw"
+            )
+            q = (
+                select(elem, func.count())
+                .join(
+                    FilteredMatchInNews,
+                    FilteredMatchInNews.news_id == FormattedNews.formatted_news_id,
+                )
                 .where(FilteredMatchInNews.match_id == match_id)
-                .group_by(elem))
+                .group_by(elem)
+            )
             return [{"keyword": k, "count": c} for k, c in await session.execute(q)]
-
-
-
 
         stmt = stmt.order_by(order_clause(FormattedNews, order))
 
-        #---------------- пагинация ---------------------
-        page      = pagination["page"]
+        # ---------------- пагинация ---------------------
+        page = pagination["page"]
         page_size = pagination["page_size"]
-        offset    = (page - 1) * page_size
+        offset = (page - 1) * page_size
 
         total_items = await session.scalar(
             select(func.count()).select_from(stmt.subquery())
@@ -160,14 +177,10 @@ async def list_match_events(
         if total_items is None:
             total_items = 0
 
-        rows = (
-            await session.execute(
-                stmt.limit(page_size).offset(offset)
-            )
-        ).all()
+        rows = (await session.execute(stmt.limit(page_size).offset(offset))).all()
 
         data = []
-        #---------------- сборка dto --------------------
+        # ---------------- сборка dto --------------------
         for news, relevance in rows:
             # Создаём DTO, подставляя relevance вручную:
             item = MatchEventOut.model_validate(
@@ -175,10 +188,10 @@ async def list_match_events(
                     **news.__dict__,
                     "respective_relevance": relevance,
                 },
-                from_attributes=True
+                from_attributes=True,
             )
             data.append(item)
-        #---------------- фасеты для сайдбара -----------
+        # ---------------- фасеты для сайдбара -----------
         # даты
         dates_q = (
             select(
@@ -194,17 +207,17 @@ async def list_match_events(
             .order_by("d")
         )
 
-        dates_facet   = [
+        dates_facet = [
             {"date": d.date(), "count": c} for d, c in await session.execute(dates_q)
         ]
 
         facets = {
             "available_dates": dates_facet,
-            "people":    await facet("People"),
-            "orgs":      await facet("Organizations"),
+            "people": await facet("People"),
+            "orgs": await facet("Organizations"),
             "locations": await facet("Locations"),
-            "events":    await facet("Events"),
-            "other":     await facet("Other"),
+            "events": await facet("Events"),
+            "other": await facet("Other"),
         }
 
         return Page[MatchEventOut](
@@ -217,6 +230,7 @@ async def list_match_events(
             ),
             facets=facets,
         )
+
 
 @router.get("/sports/{sport_id}")
 async def get_sport_details(sport_id: UUID):
@@ -232,5 +246,5 @@ async def get_sport_details(sport_id: UUID):
             "description": sport_obj.description,
             "image_url": sport_obj.image_url,
             "created_at": sport_obj.created_at,
-            "updated_at": sport_obj.updated_at
+            "updated_at": sport_obj.updated_at,
         }

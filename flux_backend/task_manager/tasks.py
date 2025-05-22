@@ -28,12 +28,13 @@ from functools import wraps
 
 
 def with_redis_lock(lock_key: str, lock_timeout: int):
-
     def decorator(func):
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Acquire the lock
-            lock_acquired = redis_client.set(lock_key, "locked", nx=True, ex=lock_timeout)
+            lock_acquired = redis_client.set(
+                lock_key, "locked", nx=True, ex=lock_timeout
+            )
 
             if not lock_acquired:
                 print("Another chain is still running. Exiting.")
@@ -48,7 +49,9 @@ def with_redis_lock(lock_key: str, lock_timeout: int):
                 print(f"An error occurred: {e}")
                 redis_client.delete(lock_key)  # Release the lock in case of an error
                 raise
+
         return wrapper
+
     return decorator
 
 
@@ -67,11 +70,12 @@ def run_spider_and_wait(spider_name: str, **kwargs: Any) -> str:
 
     return job_id
 
+
 @celery_app.task
 def release_lock(lock_key: str) -> None:
     redis_client.delete(lock_key)
 
- 
+
 @celery_app.task
 @with_redis_lock(lock_key=LOCK_KEY_CR_MATCHES, lock_timeout=LOCK_TIMEOUT_CR_MATCHES)
 def cr_matches_chain() -> None:
@@ -79,19 +83,23 @@ def cr_matches_chain() -> None:
         run_spider_and_wait.si(spider_name="CSCreateLiveScheduledMatchesSpider"),
         release_lock.si(LOCK_KEY_CR_MATCHES),
     )
-    
+
     c.apply_async()
-    
+
+
 @celery_app.task
-@with_redis_lock(lock_key=LOCK_KEY_UPDATE_MATCHES, lock_timeout=LOCK_TIMEOUT_UPDATE_MATCHES)
+@with_redis_lock(
+    lock_key=LOCK_KEY_UPDATE_MATCHES, lock_timeout=LOCK_TIMEOUT_UPDATE_MATCHES
+)
 def u_matches_chain() -> None:
     c = chain(
         run_spider_and_wait.si(spider_name="CSUpdateLiveScheduledMatchesSpider"),
         release_lock.si(LOCK_KEY_UPDATE_MATCHES),
     )
-    
+
     c.apply_async()
-    
+
+
 @celery_app.task
 @with_redis_lock(lock_key=LOCK_KEY_NEWS_SPIDER, lock_timeout=LOCK_TIMEOUT_NEWS_SPIDER)
 def news_spider_chain() -> None:
@@ -99,18 +107,22 @@ def news_spider_chain() -> None:
         run_spider_and_wait.si(spider_name="CSNewsSpider"),
         release_lock.si(LOCK_KEY_NEWS_SPIDER),
     )
-    
+
     c.apply_async()
-    
+
+
 @celery_app.task
-@with_redis_lock(lock_key=LOCK_KEY_PAST_MATCHES_SPIDER, lock_timeout=LOCK_TIMEOUT_PAST_MATCHES_SPIDER)
+@with_redis_lock(
+    lock_key=LOCK_KEY_PAST_MATCHES_SPIDER, lock_timeout=LOCK_TIMEOUT_PAST_MATCHES_SPIDER
+)
 def past_matches_spider_chain() -> None:
     c = chain(
         run_spider_and_wait.si(spider_name="CSpMatchesSpider"),
         release_lock.si(LOCK_KEY_PAST_MATCHES_SPIDER),
     )
-    
+
     c.apply_async()
+
 
 @celery_app.task
 @with_redis_lock(lock_key=LOCK_KEY_TEAMS_SPIDER, lock_timeout=LOCK_TIMEOUT_TEAMS_SPIDER)
@@ -119,25 +131,31 @@ def teams_spider_chain() -> None:
         run_spider_and_wait.si(spider_name="CSTeamsSpider"),
         release_lock.si(LOCK_KEY_TEAMS_SPIDER),
     )
-    
+
     c.apply_async()
-    
+
+
 @celery_app.task
-@with_redis_lock(lock_key=LOCK_KEY_PLAYERS_SPIDER, lock_timeout=LOCK_TIMEOUT_PLAYERS_SPIDER)
+@with_redis_lock(
+    lock_key=LOCK_KEY_PLAYERS_SPIDER, lock_timeout=LOCK_TIMEOUT_PLAYERS_SPIDER
+)
 def players_spider_chain() -> None:
     c = chain(
         run_spider_and_wait.si(spider_name="CSPlayersSpider"),
         release_lock.si(LOCK_KEY_PLAYERS_SPIDER),
     )
-    
+
     c.apply_async()
-    
+
+
 @celery_app.task
-@with_redis_lock(lock_key=LOCK_KEY_TOURNAMENTS_SPIDER, lock_timeout=LOCK_TIMEOUT_TOURNAMENTS_SPIDER)
+@with_redis_lock(
+    lock_key=LOCK_KEY_TOURNAMENTS_SPIDER, lock_timeout=LOCK_TIMEOUT_TOURNAMENTS_SPIDER
+)
 def u_tournaments_spider_chain() -> None:
     c = chain(
         run_spider_and_wait.si(spider_name="CSUpdateTournamentsSpider"),
         release_lock.si(LOCK_KEY_TOURNAMENTS_SPIDER),
     )
-    
+
     c.apply_async()

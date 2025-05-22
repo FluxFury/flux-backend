@@ -5,43 +5,42 @@ result_backend = "redis://redis:6379/1"
 
 broker_connection_retry_on_startup = True
 
-timezone = 'UTC'
+timezone = "UTC"
 
 CELERY_BEAT_SCHEDULE = {
     "create_matches": {
         "task": "flux_backend.task_manager.tasks.cr_matches_chain",
         "schedule": timedelta(minutes=3),
-        "args": ()
+        "args": (),
     },
     "update_matches": {
         "task": "flux_backend.task_manager.tasks.u_matches_chain",
         "schedule": timedelta(minutes=2),
-        "args": ()
+        "args": (),
     },
     "create_news": {
         "task": "flux_backend.task_manager.tasks.news_spider_chain",
         "schedule": timedelta(minutes=2),
-        "args": ()
+        "args": (),
     },
     "create_past_matches": {
         "task": "flux_backend.task_manager.tasks.past_matches_spider_chain",
         "schedule": timedelta(minutes=5),
-        "args": ()
+        "args": (),
     },
     "create_players": {
         "task": "flux_backend.task_manager.tasks.players_spider_chain",
         "schedule": timedelta(minutes=60),
-        "args": ()
+        "args": (),
     },
     "create_teams": {
         "task": "flux_backend.task_manager.tasks.teams_spider_chain",
         "schedule": timedelta(minutes=30),
-        "args": ()
+        "args": (),
     },
     "update_tournaments": {
         "task": "flux_backend.task_manager.tasks.u_tournaments_spider_chain",
         "schedule": timedelta(minutes=10),
-        "args": ()
-    }
-    
+        "args": (),
+    },
 }

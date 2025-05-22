@@ -16,10 +16,12 @@ from math import ceil
 from schemas.cs.schemas import Page, PageMeta
 from flux_orm.models.enums import MatchStatusEnum
 from flux_orm.models.models import FilteredMatchInNews
+
 router = APIRouter(
     prefix="/main_page",
     tags=["main_page"],
 )
+
 
 @router.get("/sports", response_model=list[SportOut])
 async def get_all_sports():
@@ -54,7 +56,7 @@ async def get_competitions_for_sport(sport_id: UUID):
         )
         result = await session.execute(stmt)
         sport = result.unique().scalar_one_or_none()
-        
+
         if not sport:
             raise HTTPException(status_code=404, detail="Sport not found")
 
@@ -64,11 +66,11 @@ async def get_competitions_for_sport(sport_id: UUID):
 @router.get("/matches", response_model=Page[MatchOut])
 async def list_matches(
     pagination: Annotated[dict, Depends(common_pagination_params)],
-    sport_id:       UUID | None = Query(None),
-    competition_id: UUID | None = Query(None),      # ← NEW
-    status_id:      UUID | None = Query(None),
-    status:         str  | None = Query(None),
-    search:         str  | None = Query(None),
+    sport_id: UUID | None = Query(None),
+    competition_id: UUID | None = Query(None),  # ← NEW
+    status_id: UUID | None = Query(None),
+    status: str | None = Query(None),
+    search: str | None = Query(None),
 ):
     """
     Выдаёт матчи (можно отфильтровать по виду спорта
@@ -82,23 +84,22 @@ async def list_matches(
                 Match,
                 MatchStatus.name.label("status_name"),
                 Competition.name.label("competition_name"),
-                func.count(FilteredMatchInNews.news_id).label("news_count")
+                func.count(FilteredMatchInNews.news_id).label("news_count"),
             )
-            .outerjoin(MatchStatus,    Match.status_id      == MatchStatus.status_id)
-            .outerjoin(Competition,    Match.competition_id == Competition.competition_id)
-            .outerjoin(FilteredMatchInNews, FilteredMatchInNews.match_id == Match.match_id)
-            .group_by(
-                Match.match_id,
-                MatchStatus.name,
-                Competition.name
-            ))
+            .outerjoin(MatchStatus, Match.status_id == MatchStatus.status_id)
+            .outerjoin(Competition, Match.competition_id == Competition.competition_id)
+            .outerjoin(
+                FilteredMatchInNews, FilteredMatchInNews.match_id == Match.match_id
+            )
+            .group_by(Match.match_id, MatchStatus.name, Competition.name)
+        )
 
         # ----------------------------------
         # 2. динамические фильтры
         if sport_id:
             stmt = stmt.where(Match.sport_id == sport_id)
-            
-        if competition_id:                           # ← NEW
+
+        if competition_id:  # ← NEW
             stmt = stmt.where(Match.competition_id == competition_id)
 
         if status_id:
@@ -106,13 +107,13 @@ async def list_matches(
         elif status:
             statuses = map(lambda x: x.lower(), status.split(","))
             stmt = stmt.where(MatchStatus.name.in_(statuses))
-        
+
         if search:
             term = f"%{search.lower()}%"
             stmt = stmt.where(
                 or_(
                     func.lower(Match.pretty_match_name).like(term),
-                    func.lower(Match.match_name).like(term)
+                    func.lower(Match.match_name).like(term),
                 )
             )
         # ----------------------------------
@@ -121,9 +122,9 @@ async def list_matches(
 
         # ----------------------------------
         # 4. пагинация
-        page     = pagination["page"]
-        page_sz  = pagination["page_size"]
-        offset   = (page - 1) * page_sz
+        page = pagination["page"]
+        page_sz = pagination["page_size"]
+        offset = (page - 1) * page_sz
 
         # 4a. посчитать total (выглядит длинно, но это один SQL)
         total_subq = stmt.with_only_columns(func.count()).order_by(None)
@@ -138,29 +139,30 @@ async def list_matches(
         # 5. сборка ответа
         items = [
             MatchOut(
-                match_id = m.match_id,
-                match_name = m.match_name,
-                pretty_match_name = m.pretty_match_name,
-                match_url = m.match_url,
-                tournament_url = m.tournament_url,
-                external_id = m.external_id,
-                planned_start_datetime = m.planned_start_datetime,
-                end_datetime = m.end_datetime,
-                status_id = m.status_id,
-                status_name = status_name,
-                competition_name = competition_name,
-                created_at = m.created_at,
-                updated_at = m.updated_at,
-                news_count = news_count,
-            ) for m, status_name, competition_name, news_count in rows
+                match_id=m.match_id,
+                match_name=m.match_name,
+                pretty_match_name=m.pretty_match_name,
+                match_url=m.match_url,
+                tournament_url=m.tournament_url,
+                external_id=m.external_id,
+                planned_start_datetime=m.planned_start_datetime,
+                end_datetime=m.end_datetime,
+                status_id=m.status_id,
+                status_name=status_name,
+                competition_name=competition_name,
+                created_at=m.created_at,
+                updated_at=m.updated_at,
+                news_count=news_count,
+            )
+            for m, status_name, competition_name, news_count in rows
         ]
 
         return Page[MatchOut](
-            data = items,
-            meta = PageMeta(
-                page         = page,
-                page_size    = page_sz,
-                total_items  = total_items,
-                total_pages  = ceil(total_items / page_sz) if total_items else 1,
+            data=items,
+            meta=PageMeta(
+                page=page,
+                page_size=page_sz,
+                total_items=total_items,
+                total_pages=ceil(total_items / page_sz) if total_items else 1,
             ),
         )

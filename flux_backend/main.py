@@ -21,9 +21,11 @@ async def lifespan(app: FastAPI):
     logger.info("Adding cs2 sport")
     await upsert_cs_sport()
 
-    logger.info(f"Initializing Kafka producer with bootstrap servers: {KAFKA_BOOTSTRAP_SERVER}")
-    producer  = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVER)
-    
+    logger.info(
+        f"Initializing Kafka producer with bootstrap servers: {KAFKA_BOOTSTRAP_SERVER}"
+    )
+    producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVER)
+
     logger.info("Starting Kafka producer")
     try:
         await producer.start()
@@ -32,9 +34,9 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error starting Kafka producer: {e}")
         raise e
 
-    stop_evt  = asyncio.Event()
+    stop_evt = asyncio.Event()
     logger.info("Starting background polling task")
-    bg_task   = asyncio.create_task(poll_and_publish(producer, stop_evt))
+    bg_task = asyncio.create_task(poll_and_publish(producer, stop_evt))
 
     try:
         yield {"producer": producer}
@@ -47,18 +49,17 @@ async def lifespan(app: FastAPI):
         await producer.stop()
         logger.info("Kafka producer stopped successfully")
 
+
 app = FastAPI(lifespan=lifespan, title="FluxFury Backend")
 
-origins = [
-    "http://localhost:5173"
-]
+origins = ["http://localhost:5173"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = origins,
-    allow_credentials = True,
-    allow_methods     = ["*"],
-    allow_headers     = ["*"],
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
