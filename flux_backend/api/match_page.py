@@ -99,10 +99,11 @@ async def get_match_teams_and_rosters(match_id: UUID):
                 ],
             })
         match_score = match_obj.match_status.status
-        teams_data[0]["score"], teams_data[1]["score"] = (
-            match_score["team1_score"],
-            match_score["team2_score"],
-        )
+        if len(teams_data) == 2:
+            teams_data[0]["score"], teams_data[1]["score"] = (
+                match_score["team1_score"],
+                match_score["team2_score"],
+            )
         return teams_data
 
 

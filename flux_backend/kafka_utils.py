@@ -1,5 +1,5 @@
 from flux_orm.models.utils import model_to_dict, utcnow_naive
-from flux_orm import Match, RawNews
+from flux_orm import Match, RawNews, MatchStatus
 from flux_orm.database import new_session
 from flux_orm.models.enums import PipelineStatus
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from aiokafka import AIOKafkaProducer
 import asyncio
 from flux_backend.custom_logger import logger
 
+from flux_orm.models.enums import MatchStatusEnum
 NEWS_TOPIC = "CS2_raw_news"
 MATCH_TOPIC = "CS2_match"
 POLL_INTERVAL = 10  # секунд
@@ -54,14 +55,17 @@ async def poll_and_publish(producer: AIOKafkaProducer, stop: asyncio.Event):
                     (
                         await session.execute(
                             select(Match)
-                            .where(Match.pipeline_status == "NEW")
+                            .join(MatchStatus, Match.status_id == MatchStatus.status_id)  # явный ON-клауза
+                            .where(
+                                Match.pipeline_status == "NEW",
+                                MatchStatus.name.in_([MatchStatusEnum.LIVE, MatchStatusEnum.SCHEDULED])
+                            )
                             .limit(MAX_BATCH)
                         )
                     )
                     .scalars()
                     .all()
                 )
-
                 logger.info(
                     f"Found {len(match_rows)} Match records to publish to Kafka"
                 )
@@ -91,3 +95,4 @@ async def poll_and_publish(producer: AIOKafkaProducer, stop: asyncio.Event):
 
         logger.debug(f"Waiting for {POLL_INTERVAL}s before next poll")
         await asyncio.sleep(POLL_INTERVAL)
+

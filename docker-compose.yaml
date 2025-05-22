@@ -74,7 +74,7 @@ services:
         - default
     command: >
       uv run celery -A flux_backend.task_manager.celery_app.celery_app worker
-      --loglevel=INFO --autoscale=12,5
+      --loglevel=INFO --autoscale=3,2
     env_file:
       - .env
     depends_on:
